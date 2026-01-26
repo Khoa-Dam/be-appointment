@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { SwaggerModule } from '@nestjs/swagger';
+import { config, swaggerConfig } from './config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -9,17 +11,25 @@ async function bootstrap() {
   // Enable validation globally
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Strip properties that don't have decorators
-      forbidNonWhitelisted: true, // Throw error if non-whitelisted properties
-      transform: true, // Automatically transform payloads to DTO instances
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 
-  // Note: Database health check available at GET /health
-  // SupabaseService is request-scoped, so we can't check it here
+  // Setup Swagger documentation (always enabled)
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup(config().swagger.path, app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  });
 
-  await app.listen(process.env.PORT ?? 3000);
-  logger.log(`🚀 Application is running on: http://localhost:${process.env.PORT ?? 3000}`);
-  logger.log(`📊 Health check: http://localhost:${process.env.PORT ?? 3000}/health`);
+  // Start server
+  await app.listen(config().app.port);
+  logger.log(`🚀 Application running on: http://localhost:${config().app.port}`);
+  logger.log(`📊 Health check: http://localhost:${config().app.port}/health`);
+  logger.log(`📚 Swagger docs: http://localhost:${config().app.port}/${config().swagger.path}`);
+  logger.log(`🌍 Environment: ${config().app.env}`);
 }
 bootstrap();

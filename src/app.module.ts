@@ -10,12 +10,14 @@ import { AvailabilityRulesModule } from './availability-rules/availability-rules
 import { TimeslotsModule } from './timeslots/timeslots.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { configuration } from './config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      load: [configuration],
     }),
     SupabaseModule,
     AuthModule,
