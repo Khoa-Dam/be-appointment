@@ -2,23 +2,24 @@ import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/
 import { SupabaseService } from '../supabase';
 import { RegisterDto, LoginDto } from './dto';
 import { UserRole } from '../common/enums';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
     constructor(private readonly supabase: SupabaseService) { }
 
     async register(dto: RegisterDto) {
-        const client = this.supabase.getClient();
+        // Use admin client for registration (auto-confirm email, proper rollback)
+        const adminClient = this.supabase.getAdminClient();
 
-        // 1. Create user in Supabase Auth
-        const { data: authData, error: authError } = await client.auth.signUp({
+        // 1. Create user in Supabase Auth with admin API
+        const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
             email: dto.email,
             password: dto.password,
-            options: {
-                data: {
-                    name: dto.name,
-                    role: dto.role,
-                },
+            email_confirm: true, // Auto-confirm for development
+            user_metadata: {
+                name: dto.name,
+                role: UserRole.GUEST, // Default role is GUEST
             },
         });
 
@@ -30,32 +31,26 @@ export class AuthService {
             throw new BadRequestException('Failed to create user');
         }
 
-        // 2. Create user in public.users table
-        const userData: any = {
+        // 2. Create user in public.users table (always GUEST by default)
+        const userData: Partial<User> = {
             id: authData.user.id,
             email: dto.email,
             name: dto.name,
-            role: dto.role,
+            role: UserRole.GUEST, // Default role is GUEST, admin can change later
             is_active: true,
             phone: dto.phone,
         };
+        // Note: Host-specific fields (specialty, description, address) are set later by admin
 
-        // Add host-specific fields
-        if (dto.role === UserRole.HOST) {
-            userData.specialty = dto.specialty;
-            userData.description = dto.description;
-            userData.address = dto.address;
-        }
-
-        const { data: user, error: dbError } = await client
+        const { data: user, error: dbError } = await adminClient
             .from('users')
             .insert(userData)
             .select()
             .single();
 
         if (dbError) {
-            // Rollback: delete auth user if DB insert fails
-            await client.auth.admin.deleteUser(authData.user.id);
+            // Rollback: delete auth user if DB insert fails (admin client)
+            await adminClient.auth.admin.deleteUser(authData.user.id);
             throw new BadRequestException(dbError.message);
         }
 
