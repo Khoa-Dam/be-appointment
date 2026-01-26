@@ -5,10 +5,10 @@ export class User {
     email: string;
     name: string;
     role: UserRole;
-    isActive: boolean;
+    is_active: boolean;
     phone?: string;
-    createdAt: Date;
-    updatedAt: Date;
+    created_at: Date;
+    updated_at: Date;
 
     constructor(partial: Partial<User>) {
         Object.assign(this, partial);
