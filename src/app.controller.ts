@@ -1,52 +1,25 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { SupabaseGuard, SupabaseService } from './supabase';
-import { CurrentUser, Roles } from './common/decorators';
-import { RolesGuard } from './common/guards';
+import { Controller, Get } from '@nestjs/common';
+import { SupabaseService } from './supabase';
 
 @Controller()
 export class AppController {
   constructor(private readonly supabase: SupabaseService) { }
 
-  // ✅ Public route - không cần authentication
   @Get()
-  getHello(): string {
-    return 'Hello World! Appointment System is running!';
+  root() {
+    return {
+      name: 'Appointment & Schedule System API',
+      version: '1.0.0',
+      status: 'running',
+      endpoints: {
+        health: 'GET /health',
+        auth: 'POST /auth/register, POST /auth/login',
+        users: 'GET /users, GET /hosts',
+        appointments: 'GET /appointments/my',
+      },
+    };
   }
 
-  // ✅ Test database connection
-  @Get('test-db')
-  async testDatabase() {
-    try {
-      const client = this.supabase.getClient();
-
-      const { data, error } = await client
-        .from('users')
-        .select('count');
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-          hint: 'Make sure to run migration SQL in Supabase Dashboard first!'
-        };
-      }
-
-      return {
-        success: true,
-        message: '✅ Database connected!',
-        usersCount: data?.[0]?.count || 0,
-        tables: ['users', 'availability_rules', 'timeslots', 'appointments', 'notifications']
-      };
-    } catch (err: any) {
-      return {
-        success: false,
-        error: err.message,
-        hint: 'Check .env file has correct credentials'
-      };
-    }
-  }
-
-  // ✅ Health check endpoint
   @Get('health')
   async healthCheck() {
     const startTime = Date.now();
@@ -100,54 +73,6 @@ export class AppController {
         },
       },
       responseTime: `${totalResponseTime}ms`,
-    };
-  }
-
-  // ✅ Protected route - cần authentication
-  @Get('profile')
-  @UseGuards(SupabaseGuard)
-  getProfile(@CurrentUser() user: any) {
-    return {
-      message: 'This is your profile',
-      user: {
-        id: user.sub,
-        email: user.email,
-        role: user.role,
-      },
-    };
-  }
-
-  // ✅ Admin only route
-  @Get('admin')
-  @UseGuards(SupabaseGuard, RolesGuard)
-  @Roles('ADMIN')
-  adminOnly(@CurrentUser() user: any) {
-    return {
-      message: 'Welcome Admin!',
-      admin: user.email,
-    };
-  }
-
-  // ✅ Host only route
-  @Get('host-dashboard')
-  @UseGuards(SupabaseGuard, RolesGuard)
-  @Roles('HOST')
-  hostDashboard(@CurrentUser() user: any) {
-    return {
-      message: 'Host Dashboard',
-      host: user.email,
-    };
-  }
-
-  // ✅ Host hoặc Admin mới vào được
-  @Get('manage-availability')
-  @UseGuards(SupabaseGuard, RolesGuard)
-  @Roles('HOST', 'ADMIN')
-  manageAvailability(@CurrentUser() user: any) {
-    return {
-      message: 'Manage Availability',
-      user: user.email,
-      role: user.role,
     };
   }
 }
