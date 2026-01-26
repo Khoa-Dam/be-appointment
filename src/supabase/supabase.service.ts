@@ -25,12 +25,12 @@ export class SupabaseService {
         // 1. Lấy Token từ Header
         const token = ExtractJwt.fromAuthHeaderAsBearerToken()(this.request);
 
-        // 2. Lấy env variables và validate
-        const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-        const supabaseKey = this.configService.get<string>('SUPABASE_KEY');
+        // 2. Lấy config values và validate
+        const supabaseUrl = this.configService.get<string>('supabase.url');
+        const supabaseKey = this.configService.get<string>('supabase.anonKey');
 
         if (!supabaseUrl || !supabaseKey) {
-            throw new Error('SUPABASE_URL and SUPABASE_KEY must be defined');
+            throw new Error('supabase.url and supabase.anonKey must be defined in configuration');
         }
 
         // 3. Tạo Client với Global Headers (Cách chuẩn của v2)
@@ -50,5 +50,22 @@ export class SupabaseService {
         );
 
         return this.clientInstance;
+    }
+
+    getAdminClient(): SupabaseClient {
+        const supabaseUrl = this.configService.get<string>('supabase.url');
+        const serviceRoleKey = this.configService.get<string>('supabase.serviceRoleKey');
+
+        if (!supabaseUrl || !serviceRoleKey) {
+            throw new Error('supabase.url and supabase.serviceRoleKey must be defined in configuration');
+        }
+
+        return createClient(supabaseUrl, serviceRoleKey, {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false,
+                detectSessionInUrl: false,
+            },
+        });
     }
 }

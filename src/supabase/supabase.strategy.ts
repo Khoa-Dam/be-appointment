@@ -1,32 +1,45 @@
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { passportJwtSecret } from 'jwks-rsa';
 
 @Injectable()
 export class SupabaseStrategy extends PassportStrategy(Strategy, 'jwt') {
-    constructor(private readonly configService: ConfigService) {
-        const jwtSecret = configService.get<string>('SUPABASE_JWT_SECRET');
+    private readonly logger = new Logger(SupabaseStrategy.name);
 
-        if (!jwtSecret) {
-            throw new Error('SUPABASE_JWT_SECRET must be defined');
+    constructor(private readonly configService: ConfigService) {
+        const supabaseUrl = configService.get<string>('supabase.url');
+        console.log('supabaseUrl', supabaseUrl);
+
+        if (!supabaseUrl) {
+            throw new Error('supabase.url must be defined in configuration');
         }
+
+        const jwksUri = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
+
 
         super({
             jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
             ignoreExpiration: false,
-            secretOrKey: jwtSecret,
-            // Lưu ý: SUPABASE_JWT_SECRET khác với SUPABASE_KEY (Anon Key)
+            secretOrKeyProvider: passportJwtSecret({
+                cache: true,
+                rateLimit: true,
+                jwksRequestsPerMinute: 5,
+                jwksUri: jwksUri,
+                handleSigningKeyError: (err, cb) => {
+                    console.error('❌ Error retrieving public key:', err?.message);
+                    return cb(err);
+                }
+            }),
+            algorithms: ['ES256'], // Token mới dùng ES256 (Chuẩn)
         });
     }
 
     async validate(payload: any) {
-        // Payload là dữ liệu đã giải mã từ Token
-        // Bạn có thể check thêm logic check user bị ban/block ở đây nếu cần
         if (!payload) {
             throw new UnauthorizedException();
         }
-        // Giá trị return ở đây sẽ được gán vào `request.user`
         return payload;
     }
 }
