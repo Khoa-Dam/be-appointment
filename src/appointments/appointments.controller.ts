@@ -3,13 +3,13 @@ import { AppointmentsService } from './appointments.service';
 
 @Controller('appointments')
 export class AppointmentsController {
-    constructor(private readonly appointmentsService: AppointmentsService) { }
+  constructor(private readonly appointmentsService: AppointmentsService) {}
 
-    // POST /appointments
+  // POST /appointments
 
-    // GET /appointments/my
+  // GET /appointments/my
 
-    // PATCH /appointments/:id/confirm
+  // PATCH /appointments/:id/confirm
 
-    // PATCH /appointments/:id/cancel
+  // PATCH /appointments/:id/cancel
 }
