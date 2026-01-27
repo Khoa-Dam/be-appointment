@@ -35,7 +35,7 @@ export class TimeslotsController {
   @Post('generate')
   @UseGuards(SupabaseGuard, RolesGuard)
   @Roles(UserRole.HOST)
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Generate timeslots based on an Availability Rule',
     description:
@@ -56,7 +56,7 @@ export class TimeslotsController {
   @ApiBody({ type: GenerateTimeslotsDto })
   async generateTimeSlots(
     @Body() generateDto: GenerateTimeslotsDto,
-    @CurrentUser() currentUser: User,
+    @CurrentUser() currentUser: any,
   ): Promise<{ created: number; message: string }> {
     return this.timeslotsService.generateTimeslots(generateDto, currentUser);
   }

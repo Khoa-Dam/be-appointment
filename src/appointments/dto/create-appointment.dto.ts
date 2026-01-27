@@ -17,4 +17,20 @@ export class CreateAppointmentDto {
     @IsString()
     @MaxLength(500)
     reason?: string;
+
+    // Fields for anonymous guests
+    @ApiPropertyOptional({ example: 'Alice Guest', description: 'Name (for anonymous booking)' })
+    @IsOptional()
+    @IsString()
+    guestName?: string;
+
+    @ApiPropertyOptional({ example: 'alice@example.com', description: 'Email (for anonymous booking)' })
+    @IsOptional()
+    @IsString() // Can verify email format in service or pipe if needed
+    guestEmail?: string;
+
+    @ApiPropertyOptional({ example: '0987654321', description: 'Phone (for anonymous booking)' })
+    @IsOptional()
+    @IsString()
+    guestPhone?: string;
 }

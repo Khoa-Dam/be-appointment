@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, UseGuards, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
 import { SupabaseGuard } from '../supabase';
@@ -24,6 +24,19 @@ export class AppointmentsController {
         @Body() dto: CreateAppointmentDto,
     ) {
         return this.appointmentsService.create(user.sub, dto);
+    }
+
+    @Post('public')
+    @ApiOperation({ summary: 'Create appointment for anonymous guest' })
+    @ApiResponse({ status: 201, description: 'Appointment created successfully' })
+    @ApiResponse({ status: 400, description: 'Missing guest info' })
+    async createPublic(
+        @Body() dto: CreateAppointmentDto,
+    ) {
+        if (!dto.guestName || !dto.guestEmail) {
+            throw new BadRequestException('Name and Email are required for anonymous booking');
+        }
+        return this.appointmentsService.create(null, dto);
     }
 
     @Get('my')

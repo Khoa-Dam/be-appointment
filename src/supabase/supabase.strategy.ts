@@ -10,7 +10,6 @@ export class SupabaseStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     constructor(private readonly configService: ConfigService) {
         const supabaseUrl = configService.get<string>('supabase.url');
-        console.log('supabaseUrl', supabaseUrl);
 
         if (!supabaseUrl) {
             throw new Error('supabase.url must be defined in configuration');

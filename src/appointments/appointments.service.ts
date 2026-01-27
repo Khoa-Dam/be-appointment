@@ -11,16 +11,15 @@ export class AppointmentsService {
         private readonly eventEmitter: EventEmitter2,
     ) { }
 
-    async create(guestId: string, dto: CreateAppointmentDto) {
-        const client = this.supabase.getClient();
+    async create(guestId: string | null, dto: CreateAppointmentDto) {
+        // Use Admin Client to bypass RLS for booking logic (lock slot)
+        const client = this.supabase.getAdminClient();
 
         // 1. ATOMIC: Lock timeslot (prevent race condition)
         const { data: timeslot, error: slotError } = await client
             .from('timeslots')
             .update({
-                is_available: false,
-                booked_by: guestId,
-                updated_at: new Date().toISOString()
+                is_available: false
             })
             .eq('id', dto.timeSlotId)
             .eq('is_available', true)
@@ -31,22 +30,38 @@ export class AppointmentsService {
             throw new ConflictException('Slot đã được đặt bởi người khác. Vui lòng chọn slot khác.');
         }
 
-        // Get guest info
-        const { data: guest } = await client
-            .from('users')
-            .select('id, name, email')
-            .eq('id', guestId)
-            .single();
+        // Prepare guest info
+        let guestName = dto.guestName;
+        let guestEmail = dto.guestEmail;
+        let guestPhone = dto.guestPhone;
+
+        if (guestId) {
+            const { data: guest } = await client
+                .from('users')
+                .select('name, email, phone')
+                .eq('id', guestId)
+                .single();
+
+            if (guest) {
+                guestName = guest.name;
+                guestEmail = guest.email;
+                guestPhone = guest.phone;
+            }
+        }
 
         // 2. Create appointment
         const { data: appointment, error: apptError } = await client
             .from('appointments')
             .insert({
-                guest_id: guestId,
+                guest_id: guestId, // Nullable
                 host_id: dto.hostId,
                 timeslot_id: dto.timeSlotId,
                 reason: dto.reason,
                 status: 'PENDING',
+                // New fields for anonymous
+                guest_name: guestName,
+                guest_email: guestEmail,
+                guest_phone: guestPhone,
             })
             .select('*, timeslots(*)')
             .single();
@@ -54,7 +69,7 @@ export class AppointmentsService {
         if (apptError) {
             await client
                 .from('timeslots')
-                .update({ is_available: true, booked_by: null })
+                .update({ is_available: true })
                 .eq('id', dto.timeSlotId);
             throw new BadRequestException(apptError.message);
         }
@@ -65,9 +80,9 @@ export class AppointmentsService {
             hostId: dto.hostId,
             hostName: timeslot.host?.name || 'Host',
             hostEmail: timeslot.host?.email,
-            guestId,
-            guestName: guest?.name || 'Guest',
-            guestEmail: guest?.email,
+            guestId: guestId || 'anonymous',
+            guestName: guestName || 'Guest',
+            guestEmail: guestEmail,
             date: timeslot.date,
             time: new Date(timeslot.start_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
             reason: dto.reason,
@@ -100,11 +115,8 @@ export class AppointmentsService {
             `)
             .order('created_at', { ascending: false });
 
-        if (role === 'HOST') {
-            query = query.eq('host_id', userId);
-        } else {
-            query = query.eq('guest_id', userId);
-        }
+        // Return appointments where user is either Host OR Guest
+        query = query.or(`host_id.eq.${userId},guest_id.eq.${userId}`);
 
         const { data, error } = await query;
 
@@ -116,28 +128,33 @@ export class AppointmentsService {
             id: appt.id,
             status: appt.status,
             reason: appt.reason,
-            cancelReason: appt.cancel_reason,
             timeSlot: {
                 date: appt.timeslots?.date,
                 startTime: appt.timeslots?.start_time,
                 endTime: appt.timeslots?.end_time,
             },
             host: appt.host,
-            guest: appt.guest,
+            guest: appt.guest || {
+                name: appt.guest_name,
+                email: appt.guest_email,
+                phone: appt.guest_phone,
+            },
             createdAt: appt.created_at,
             updatedAt: appt.updated_at,
         }));
     }
 
     async confirm(appointmentId: string, hostId: string) {
-        const client = this.supabase.getClient();
+        // Use Admin Client to ensure reliability (ownership checked by query)
+        const client = this.supabase.getAdminClient();
+
+        console.log(`DEBUG: Confirming appt ${appointmentId} for host ${hostId}`);
 
         // Get appointment with relations
         const { data, error } = await client
             .from('appointments')
             .update({
-                status: 'CONFIRMED',
-                updated_at: new Date().toISOString()
+                status: 'CONFIRMED'
             })
             .eq('id', appointmentId)
             .eq('host_id', hostId)
@@ -151,6 +168,7 @@ export class AppointmentsService {
             .single();
 
         if (error || !data) {
+            console.error('Confirm Error:', error);
             throw new BadRequestException('Cannot confirm this appointment. It may not exist, not belong to you, or not in PENDING status.');
         }
 
@@ -158,8 +176,8 @@ export class AppointmentsService {
         this.eventEmitter.emit('appointment.confirmed', {
             appointmentId: data.id,
             hostName: data.host?.name || 'Host',
-            guestName: data.guest?.name || 'Guest',
-            guestEmail: data.guest?.email,
+            guestName: data.guest?.name || data.guest_name || 'Guest',
+            guestEmail: data.guest?.email || data.guest_email,
             date: data.timeslots?.date,
             time: new Date(data.timeslots?.start_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
         } as AppointmentConfirmedEvent);
@@ -220,7 +238,7 @@ export class AppointmentsService {
         // 3. Unlock timeslot
         await client
             .from('timeslots')
-            .update({ is_available: true, booked_by: null })
+            .update({ is_available: true })
             .eq('id', appointment.timeslot_id);
 
         // 4. Emit event for email
@@ -231,8 +249,8 @@ export class AppointmentsService {
             hostName: appointment.host?.name || 'Host',
             hostEmail: appointment.host?.email,
             guestId: appointment.guest_id,
-            guestName: appointment.guest?.name || 'Guest',
-            guestEmail: appointment.guest?.email,
+            guestName: appointment.guest?.name || appointment.guest_name || 'Guest',
+            guestEmail: appointment.guest?.email || appointment.guest_email,
             date: appointment.timeslots?.date,
             time: new Date(appointment.timeslots?.start_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
             cancelReason,

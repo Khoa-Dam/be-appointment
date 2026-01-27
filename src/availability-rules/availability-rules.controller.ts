@@ -17,16 +17,16 @@ export class AvailabilityRulesController {
 
     @Post()
     @UseGuards(SupabaseGuard)
-    @ApiBearerAuth()
+    @ApiBearerAuth('access-token') // Fixed: must match swagger config name
     @ApiOperation({ summary: 'Create a new availability rule', description: 'Define working hours/days. If user is Guest, they will be auto-upgraded to Host.' })
     @ApiResponse({ status: 201, description: 'Rule created successfully.', type: AvailabilityRule })
     @ApiResponse({ status: 400, description: 'Bad Request.' })
     @ApiBody({ type: CreateAvailabilityRuleDto })
     async create(
-        @CurrentUser() currentUser: User,
+        @CurrentUser() currentUser: any,
         @Body() createRuleDto: CreateAvailabilityRuleDto
     ) {
-        return this.availabilityRulesService.create(currentUser.id, createRuleDto);
+        return this.availabilityRulesService.create(currentUser.sub, createRuleDto);
     }
 
     @Get(':hostId')
@@ -40,7 +40,7 @@ export class AvailabilityRulesController {
     @Patch(':id')
     @UseGuards(SupabaseGuard, RolesGuard)
     @Roles(UserRole.HOST)
-    @ApiBearerAuth()
+    @ApiBearerAuth('access-token')
     @ApiOperation({ summary: 'Update an availability rule', description: 'Update details of an existing rule.' })
     @ApiResponse({ status: 200, description: 'Rule updated successfully.', type: AvailabilityRule })
     @ApiResponse({ status: 403, description: 'Forbidden. Only Hosts allowed.' })
@@ -48,23 +48,23 @@ export class AvailabilityRulesController {
     @ApiBody({ type: UpdateAvailabilityRuleDto })
     async update(
         @Param('id', ParseUUIDPipe) ruleId: string,
-        @CurrentUser() currentUser: User,
+        @CurrentUser() currentUser: any,
         @Body() updateDto: UpdateAvailabilityRuleDto
     ) {
-        return this.availabilityRulesService.update(ruleId, currentUser.id, updateDto);
+        return this.availabilityRulesService.update(ruleId, currentUser.sub, updateDto);
     }
     @Delete(':id')
     @UseGuards(SupabaseGuard, RolesGuard)
     @Roles(UserRole.HOST)
-    @ApiBearerAuth()
+    @ApiBearerAuth('access-token')
     @ApiOperation({ summary: 'Delete an availability rule', description: 'Remove an existing rule permanently.' })
     @ApiResponse({ status: 200, description: 'Rule deleted successfully.' })
     @ApiResponse({ status: 403, description: 'Forbidden. Only Hosts allowed.' })
     @ApiParam({ name: 'id', description: 'The UUID of the rule' })
     async delete(
         @Param('id', ParseUUIDPipe) ruleId: string,
-        @CurrentUser() currentUser: User
+        @CurrentUser() currentUser: any
     ) {
-        return this.availabilityRulesService.delete(ruleId, currentUser.id);
+        return this.availabilityRulesService.delete(ruleId, currentUser.sub);
     }
 }

@@ -44,7 +44,7 @@ export class AuthService {
 
         const { data: user, error: dbError } = await adminClient
             .from('users')
-            .insert(userData)
+            .upsert(userData)
             .select()
             .single();
 

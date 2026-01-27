@@ -26,14 +26,14 @@ export class TimeslotsService {
   private readonly TIMESLOTS_TABLE = 'timeslots';
   private readonly RULES_TABLE = 'availability_rules';
 
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly supabase: SupabaseService) { }
 
   // Tạo timeslot dự trên availabilityRule từ host
   async generateTimeslots(
     dto: GenerateTimeslotsDto,
-    currentUser: User,
+    currentUser: any,
   ): Promise<{ created: number; message: string }> {
-    const rule = await this._getAndValidateRule(dto.ruleId, currentUser.id);
+    const rule = await this._getAndValidateRule(dto.ruleId, currentUser.sub);
 
     const newTimeSlots = this._calculateSlots(rule, dto);
 
@@ -151,7 +151,18 @@ export class TimeslotsService {
       );
     }
 
-    return rule;
+    // Map snake_case to camelCase
+    return new AvailabilityRule({
+      id: rule.id,
+      hostId: rule.host_id,
+      ruleType: rule.rule_type,
+      daysOfWeek: rule.days_of_week,
+      startHour: rule.start_hour,
+      endHour: rule.end_hour,
+      isActive: rule.is_active,
+      createdAt: new Date(rule.created_at),
+      updatedAt: new Date(rule.updated_at),
+    });
   }
 
   /**
@@ -219,12 +230,12 @@ export class TimeslotsService {
       }
 
       slots.push({
-        hostId: rule.hostId,
-        ruleId: rule.id,
-        startTime: currentTime,
-        endTime: slotEndTime,
-        isAvailable: true,
-      });
+        host_id: rule.hostId,
+        rule_id: rule.id,
+        start_time: currentTime,
+        end_time: slotEndTime,
+        is_available: true,
+      } as any);
       currentTime = slotEndTime;
     }
     return slots;

@@ -24,7 +24,9 @@ export class RolesGuard implements CanActivate {
         }
 
         // Fetch actual role from database (not from JWT which may be stale)
-        const client = this.supabaseService.getClient();
+        // Fetch actual role from database (not from JWT which may be stale)
+        // Use Admin Client to bypass RLS policies and ensure we get the latest data
+        const client = this.supabaseService.getAdminClient();
         const { data: dbUser, error } = await client
             .from('users')
             .select('role')
@@ -32,6 +34,7 @@ export class RolesGuard implements CanActivate {
             .single();
 
         if (error || !dbUser) {
+            console.error(`DEBUG: RolesGuard - User not found. ID: ${user.sub}`, error);
             throw new ForbiddenException('User not found in database');
         }
 
