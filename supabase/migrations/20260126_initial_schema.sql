@@ -117,11 +117,15 @@ CREATE POLICY "Anyone can view available timeslots"
 CREATE TABLE IF NOT EXISTS public.appointments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   host_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  guest_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  guest_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
   timeslot_id UUID REFERENCES public.timeslots(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'CONFIRMED', 'CANCELED')),
   reason TEXT,
   cancel_reason TEXT,
+  -- Anonymous Guest Info
+  guest_name TEXT,
+  guest_email TEXT,
+  guest_phone TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   
@@ -234,20 +238,24 @@ CREATE TRIGGER on_auth_user_created
 CREATE OR REPLACE FUNCTION public.notify_appointment_change()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Notify guest when status changes
+  -- Notify guest when status changes (ONLY IF GUEST EXISTS)
   IF OLD.status != NEW.status THEN
-    INSERT INTO public.notifications (recipient_id, type, appointment_id)
-    VALUES (
-      NEW.guest_id,
-      CASE NEW.status
-        WHEN 'CONFIRMED' THEN 'APPOINTMENT_CONFIRMED'
-        WHEN 'CANCELED' THEN 'APPOINTMENT_CANCELED'
-        ELSE 'APPOINTMENT_UPDATED'
-      END,
-      NEW.id
-    );
     
-    -- Also notify host
+    -- Check if guest_id is NOT NULL before inserting notification
+    IF NEW.guest_id IS NOT NULL THEN
+        INSERT INTO public.notifications (recipient_id, type, appointment_id)
+        VALUES (
+          NEW.guest_id,
+          CASE NEW.status
+            WHEN 'CONFIRMED' THEN 'APPOINTMENT_CONFIRMED'
+            WHEN 'CANCELED' THEN 'APPOINTMENT_CANCELED'
+            ELSE 'APPOINTMENT_UPDATED'
+          END,
+          NEW.id
+        );
+    END IF;
+    
+    -- Also notify host (Always notify host)
     INSERT INTO public.notifications (recipient_id, type, appointment_id)
     VALUES (
       NEW.host_id,
