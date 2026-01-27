@@ -10,6 +10,7 @@ import { AvailabilityRulesModule } from './availability-rules/availability-rules
 import { TimeslotsModule } from './timeslots/timeslots.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { EventsModule } from './events';
 import { configuration } from './config';
 
 @Module({
@@ -20,6 +21,7 @@ import { configuration } from './config';
       load: [configuration],
     }),
     SupabaseModule,
+    EventsModule,  // Event-driven architecture for emails
     AuthModule,
     UsersModule,
     ReportsModule,
