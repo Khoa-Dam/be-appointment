@@ -10,7 +10,8 @@ export class AvailabilityRulesService {
     constructor(private readonly supabase: SupabaseService) { }
 
     async create(hostId: string, dto: CreateAvailabilityRuleDto) {
-        const client = this.supabase.getClient();
+        // Use Admin Client to bypass RLS (needed for checking user role and auto-upgrading)
+        const client = this.supabase.getAdminClient();
 
         // 1. Check current user role
         const { data: user, error: userError } = await client
@@ -112,7 +113,6 @@ export class AvailabilityRulesService {
                 start_hour: dto.startHour,
                 end_hour: dto.endHour,
                 is_active: dto.isActive,
-                updated_at: new Date().toISOString(),
             })
             .eq('id', ruleId)
             .select()

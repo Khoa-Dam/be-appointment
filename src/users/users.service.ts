@@ -44,7 +44,7 @@ export class UsersService {
 
         const { data, error } = await client
             .from('users')
-            .update({ is_active: isActive, updated_at: new Date().toISOString() })
+            .update({ is_active: isActive })
             .eq('id', userId)
             .select()
             .single();
@@ -146,7 +146,6 @@ export class UsersService {
                 specialty: hostData.specialty,
                 description: hostData.description,
                 address: hostData.address,
-                updated_at: new Date().toISOString(),
             })
             .eq('id', userId)
             .select()
