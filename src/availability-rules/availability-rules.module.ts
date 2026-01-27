@@ -4,9 +4,9 @@ import { AvailabilityRulesService } from './availability-rules.service';
 import { SupabaseModule } from '../supabase';
 
 @Module({
-    imports: [SupabaseModule],
-    controllers: [AvailabilityRulesController],
-    providers: [AvailabilityRulesService],
-    exports: [AvailabilityRulesService],
+  imports: [SupabaseModule],
+  controllers: [AvailabilityRulesController],
+  providers: [AvailabilityRulesService],
+  exports: [AvailabilityRulesService],
 })
-export class AvailabilityRulesModule { }
+export class AvailabilityRulesModule {}
