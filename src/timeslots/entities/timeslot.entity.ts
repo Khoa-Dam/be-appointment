@@ -7,6 +7,11 @@ export class TimeSlot {
     isAvailable: boolean;
     createdAt: Date;
 
+    // Derived properties for frontend
+    date?: string;
+    startLabel?: string;
+    endLabel?: string;
+
     constructor(partial: Partial<TimeSlot>) {
         Object.assign(this, partial);
     }
