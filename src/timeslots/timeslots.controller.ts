@@ -32,12 +32,12 @@ export class TimeslotsController {
     return this.timeslotsService.generateTimeslots(generateDto, currentUser);
   }
 
-  @Get()
-  async findAvailableSlots(
-    @Query() queryParams: QueryTimeslotsDto,
-  ): Promise<TimeSlot[]> {
-    return this.timeslotsService.findAvailableSlots(queryParams);
-  }
+  //   @Get()
+  //   async findAvailableSlots(
+  //     @Query() queryParams: QueryTimeslotsDto,
+  //   ): Promise<TimeSlot[]> {
+  //     return this.timeslotsService.findAvailableSlots(queryParams);
+  //   }
 
   @Get('host/:id')
   async findGuestTimeslotsByHost(

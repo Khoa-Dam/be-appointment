@@ -56,40 +56,37 @@ export class TimeslotsService {
     return { created: count ?? 0, message: 'TimeSlots generated successfully' };
   }
 
-  //   /**
-  //    * Finds available time slots for a given host, intended for a simple view.
-  //    */
-  // Tìm timeslot trống của host.
-  async findAvailableSlots(
-    queryParams: QueryTimeslotsDto,
-  ): Promise<TimeSlot[]> {
-    const { hostId } = queryParams;
-    if (!hostId) {
-      return [];
-    }
+  // Tìm timeslot trống của host theo query.
+  //   async findAvailableSlots(
+  //     queryParams: QueryTimeslotsDto,
+  //   ): Promise<TimeSlot[]> {
+  //     const { hostId } = queryParams;
+  //     if (!hostId) {
+  //       return [];
+  //     }
 
-    const query = this._createAvailableSlotsQuery(hostId).select(
-      'id, start_time, end_time, is_available',
-    );
+  //     const query = this._createAvailableSlotsQuery(hostId).select(
+  //       'id, start_time, end_time, is_available',
+  //     );
 
-    const { data, error } = await query;
+  //     const { data, error } = await query;
 
-    if (error) {
-      throw new InternalServerErrorException(
-        `Failed to fetch timeslots: ${error.message}`,
-      );
-    }
+  //     if (error) {
+  //       throw new InternalServerErrorException(
+  //         `Failed to fetch timeslots: ${error.message}`,
+  //       );
+  //     }
 
-    return data.map(
-      (slot) =>
-        new TimeSlot({
-          id: slot.id,
-          startTime: new Date(slot.start_time),
-          endTime: new Date(slot.end_time),
-          isAvailable: slot.is_available,
-        }),
-    );
-  }
+  //     return data.map(
+  //       (slot) =>
+  //         new TimeSlot({
+  //           id: slot.id,
+  //           startTime: new Date(slot.start_time),
+  //           endTime: new Date(slot.end_time),
+  //           isAvailable: slot.is_available,
+  //         }),
+  //     );
+  //   }
 
   /**
    * Finds available time slots for a given host, formatted for a detailed guest view.
