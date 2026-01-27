@@ -1,9 +1,13 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase';
 import { NotificationType } from '../common/enums';
+import { Subject, Observable } from 'rxjs';
+import { map, filter } from 'rxjs/operators';
 
 @Injectable()
 export class NotificationsService {
+    private notificationSubject = new Subject<any>();
+
     constructor(private readonly supabase: SupabaseService) { }
 
     async findMyNotifications(userId: string) {
@@ -25,6 +29,16 @@ export class NotificationsService {
             sentAt: notif.sent_at,
             status: notif.status,
         }));
+    }
+
+    // Get SSE Stream filtered by User ID
+    getNotificationsStream(userId: string): Observable<any> {
+        return this.notificationSubject.asObservable().pipe(
+            filter((notification) => notification.recipientId === userId),
+            map((notification) => ({
+                data: notification,
+            }))
+        );
     }
 
     async sendNotification(
@@ -89,10 +103,18 @@ export class NotificationsService {
             );
         }
 
+        // Push to Real-time Stream
+        this.notificationSubject.next({
+            recipientId,
+            id: data.id,
+            type,
+            appointmentId: appointmentId || null,
+            sentAt: data.sent_at,
+            message: `New notification: ${type}`
+        });
+
         return data;
     }
 
-    async markAsRead(notificationId: string, userId: string) {
-        // Update status to READ
-    }
+
 }

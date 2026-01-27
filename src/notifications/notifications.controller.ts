@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, UseGuards, HttpCode, HttpStatus, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, HttpCode, HttpStatus, NotFoundException, Sse } from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { SupabaseGuard } from '../supabase';
@@ -62,7 +63,8 @@ export class NotificationsController {
         }
 
         // Send to both host and guest
-        const recipients = [appointment.host_id, appointment.guest_id];
+        // Send to both host and guest (filter out nulls for anonymous guests)
+        const recipients = [appointment.host_id, appointment.guest_id].filter(id => id !== null);
 
         for (const recipientId of recipients) {
             await this.notificationsService.sendNotification(
@@ -73,5 +75,13 @@ export class NotificationsController {
         }
 
         return { message: 'Notification sent' };
+    }
+    @Sse('sse')
+    @UseGuards(SupabaseGuard)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({ summary: 'Real-time notifications (SSE)' })
+    @ApiResponse({ status: 200, description: 'Stream of notifications' })
+    sse(@CurrentUser() user: any): Observable<any> {
+        return this.notificationsService.getNotificationsStream(user.sub);
     }
 }
