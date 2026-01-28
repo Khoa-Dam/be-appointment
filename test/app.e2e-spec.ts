@@ -43,7 +43,7 @@ describe('AppController (e2e)', () => {
   });
 
   describe('1. Authentication & Setup', () => {
-    it('/auth/register (POST) - Register Host', async () => {
+    it('[TC_01] /auth/register (POST) - Register Host', async () => {
       const response = await request(server)
         .post('/auth/register')
         .send(hostData)
@@ -53,7 +53,7 @@ describe('AppController (e2e)', () => {
       expect(response.body.email).toBe(hostData.email);
     });
 
-    it('/auth/login (POST) - Login Host', async () => {
+    it('[TC_02] /auth/login (POST) - Login Host', async () => {
       const response = await request(server)
         .post('/auth/login')
         .send({ email: hostData.email, password: hostData.password })
@@ -64,7 +64,7 @@ describe('AppController (e2e)', () => {
       expect(hostToken).toBeDefined();
     });
 
-    it('/availability-rules (POST) - Create Rule', async () => {
+    it('[TC_03] /availability-rules (POST) - Create Rule', async () => {
       const response = await request(server)
         .post('/availability-rules')
         .set('Authorization', `Bearer ${hostToken}`)
@@ -81,7 +81,7 @@ describe('AppController (e2e)', () => {
       expect(availabilityRuleId).toBeDefined();
     });
 
-    it('/timeslots/generate (POST) - Generate Slots', async () => {
+    it('[TC_04] /timeslots/generate (POST) - Generate Slots', async () => {
       // Generate for next 3 days
       const today = new Date();
       const nextDay = new Date(today); nextDay.setDate(today.getDate() + 1);
@@ -106,14 +106,14 @@ describe('AppController (e2e)', () => {
   });
 
   describe('2. Guest Actions', () => {
-    it('/auth/register (POST) - Register Guest', async () => {
+    it('[TC_05] /auth/register (POST) - Register Guest', async () => {
       await request(server)
         .post('/auth/register')
         .send(guestData)
         .expect(201);
     });
 
-    it('/auth/login (POST) - Login Guest', async () => {
+    it('[TC_06] /auth/login (POST) - Login Guest', async () => {
       const response = await request(server)
         .post('/auth/login')
         .send({ email: guestData.email, password: guestData.password })
@@ -123,7 +123,7 @@ describe('AppController (e2e)', () => {
       expect(guestToken).toBeDefined();
     });
 
-    it('/hosts (GET) - Search Hosts', async () => {
+    it('[TC_07] /hosts (GET) - Search Hosts', async () => {
       const response = await request(server)
         .get('/hosts')
         .set('Authorization', `Bearer ${guestToken}`)
@@ -133,7 +133,7 @@ describe('AppController (e2e)', () => {
       expect(foundHost).toBeDefined();
     });
 
-    it('/timeslots/host/:id (GET) - Get Host Slots', async () => {
+    it('[TC_08] /timeslots/host/:id (GET) - Get Host Slots', async () => {
       const response = await request(server)
         .get(`/timeslots/host/${hostId}`)
         .set('Authorization', `Bearer ${guestToken}`)
@@ -144,7 +144,7 @@ describe('AppController (e2e)', () => {
       timeSlotId = availableSlot.id;
     });
 
-    it('/appointments (POST) - Create Appointment', async () => {
+    it('[TC_09] /appointments (POST) - Create Appointment', async () => {
       const response = await request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${guestToken}`)
@@ -161,7 +161,7 @@ describe('AppController (e2e)', () => {
   });
 
   describe('3. Confirmation', () => {
-    it('/appointments/:id/confirm (PATCH) - Host Confirms', async () => {
+    it('[TC_10] /appointments/:id/confirm (PATCH) - Host Confirms', async () => {
       const response = await request(server)
         .patch(`/appointments/${appointmentId}/confirm`)
         .set('Authorization', `Bearer ${hostToken}`)
@@ -171,7 +171,7 @@ describe('AppController (e2e)', () => {
       expect(response.body.status).toBe('CONFIRMED');
     });
 
-    it('/notifications/my (GET) - Guest Checks Notification', async () => {
+    it('[TC_11] /notifications/my (GET) - Guest Checks Notification', async () => {
       // Need a small delay really, but logic usually fast enough
       const response = await request(server)
         .get('/notifications/my')
@@ -189,14 +189,14 @@ describe('AppController (e2e)', () => {
   });
 
   describe('4. Edge Cases & Error Handling', () => {
-    it('/auth/login (POST) - Fail with wrong password', async () => {
+    it('[TC_12] /auth/login (POST) - Fail with wrong password', async () => {
       await request(server)
         .post('/auth/login')
         .send({ email: hostData.email, password: 'wrongpassword' })
         .expect(401);
     });
 
-    it('/timeslots/generate (POST) - Guest Forbidden', async () => {
+    it('[TC_13] /timeslots/generate (POST) - Guest Forbidden', async () => {
       await request(server)
         .post('/timeslots/generate')
         .set('Authorization', `Bearer ${guestToken}`) // Guest trying to act as Host
@@ -209,7 +209,7 @@ describe('AppController (e2e)', () => {
         .expect(403);
     });
 
-    it('/appointments (POST) - Fail Double Booking', async () => {
+    it('[TC_14] /appointments (POST) - Fail Double Booking', async () => {
       // Try to book the same slot again with a new guest
       const newGuest = {
         name: `GUEST_2_${randomId()}`,
@@ -237,7 +237,7 @@ describe('AppController (e2e)', () => {
   });
 
   describe('5. Cancellation', () => {
-    it('/appointments/:id/cancel (PATCH) - Host Cancels Appointment', async () => {
+    it('[TC_15] /appointments/:id/cancel (PATCH) - Host Cancels Appointment', async () => {
       const response = await request(server)
         .patch(`/appointments/${appointmentId}/cancel`)
         .set('Authorization', `Bearer ${hostToken}`)
@@ -248,7 +248,7 @@ describe('AppController (e2e)', () => {
       expect(response.body.cancelReason).toBe('Host busy');
     });
 
-    it('/notifications/my (GET) - Guest Recieves Cancel Notification', async () => {
+    it('[TC_16] /notifications/my (GET) - Guest Recieves Cancel Notification', async () => {
       const response = await request(server)
         .get('/notifications/my')
         .set('Authorization', `Bearer ${guestToken}`)
@@ -260,7 +260,7 @@ describe('AppController (e2e)', () => {
       }
     });
 
-    it('/timeslots/host/:id (GET) - Slot should be open again', async () => {
+    it('[TC_17] /timeslots/host/:id (GET) - Slot should be open again', async () => {
       // After cancel, the slot should be available again
       const response = await request(server)
         .get(`/timeslots/host/${hostId}`)
