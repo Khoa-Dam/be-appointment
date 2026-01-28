@@ -124,3 +124,7 @@ Hệ thống sẽ tự động xử lý email:
     *   Gửi email cho Guest: "Lịch của bạn đã được xác nhận!".
 3.  **Khi Hủy (Cancel)**:
     *   Gửi email thông báo hủy cho phía còn lại.
+
+4.  **Real-time (SSE)**:
+    *   Client kết nối stream tại `/notifications/sse`.
+    *   Nhận thông báo tức thì (không cần reload trang) khi trạng thái lịch thay đổi.
