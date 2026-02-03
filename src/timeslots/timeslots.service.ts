@@ -232,6 +232,7 @@ export class TimeslotsService {
       slots.push({
         host_id: rule.hostId,
         rule_id: rule.id,
+        date: format(day, 'yyyy-MM-dd'),
         start_time: currentTime,
         end_time: slotEndTime,
         is_available: true,
