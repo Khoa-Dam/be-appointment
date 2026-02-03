@@ -53,6 +53,25 @@ export class AvailabilityRulesController {
     ) {
         return this.availabilityRulesService.update(ruleId, currentUser.sub, updateDto);
     }
+
+    @Post(':id/activate')
+    @UseGuards(SupabaseGuard, RolesGuard)
+    @Roles(UserRole.HOST)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({
+        summary: 'Activate an availability rule',
+        description: 'Atomic operation: deactivates all other rules and activates the selected one.'
+    })
+    @ApiResponse({ status: 200, description: 'Rule activated successfully.', type: AvailabilityRule })
+    @ApiResponse({ status: 403, description: 'Forbidden. Only Hosts allowed.' })
+    @ApiParam({ name: 'id', description: 'The UUID of the rule to activate' })
+    async activate(
+        @Param('id', ParseUUIDPipe) ruleId: string,
+        @CurrentUser() currentUser: any
+    ) {
+        return this.availabilityRulesService.activate(ruleId, currentUser.sub);
+    }
+
     @Delete(':id')
     @UseGuards(SupabaseGuard, RolesGuard)
     @Roles(UserRole.HOST)

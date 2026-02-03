@@ -43,7 +43,24 @@ export class AvailabilityRulesService {
             }
         }
 
-        // 3. Create Availability Rule (Normal flow)
+        // 3. Check if doctor already has an active rule
+        const { data: existingRules, error: checkError } = await client
+            .from('availability_rules')
+            .select('id')
+            .eq('host_id', hostId)
+            .eq('is_active', true);
+
+        if (checkError) {
+            throw new BadRequestException(`Failed to check existing rules: ${checkError.message}`);
+        }
+
+        if (existingRules && existingRules.length > 0) {
+            throw new BadRequestException(
+                'You already have an active availability rule. Please deactivate it first or update the existing one.'
+            );
+        }
+
+        // 4. Create Availability Rule (Normal flow)
         // Default to WEEKLY if not provided
         const ruleType = dto.ruleType || RuleType.WEEKLY;
 
@@ -154,5 +171,52 @@ export class AvailabilityRulesService {
         }
 
         return { message: 'Rule deleted successfully' };
+    }
+
+    async activate(ruleId: string, hostId: string) {
+        const client = this.supabase.getAdminClient();
+
+        // 1. Verify rule exists and belongs to host
+        const { data: rule, error: ruleError } = await client
+            .from('availability_rules')
+            .select('host_id, is_active')
+            .eq('id', ruleId)
+            .single();
+
+        if (ruleError || !rule) {
+            throw new BadRequestException('Rule not found');
+        }
+
+        if (rule.host_id !== hostId) {
+            throw new BadRequestException('You can only activate your own rules');
+        }
+
+        if (rule.is_active) {
+            return { message: 'Rule is already active' };
+        }
+
+        // 2. Deactivate all other rules for this host
+        await client
+            .from('availability_rules')
+            .update({ is_active: false })
+            .eq('host_id', hostId)
+            .neq('id', ruleId);
+
+        // 3. Activate the selected rule
+        const { data, error } = await client
+            .from('availability_rules')
+            .update({ is_active: true })
+            .eq('id', ruleId)
+            .select()
+            .single();
+
+        if (error) {
+            throw new BadRequestException(error.message);
+        }
+
+        return {
+            ...data,
+            message: 'Rule activated successfully. Other rules have been deactivated.',
+        };
     }
 }
