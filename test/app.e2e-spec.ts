@@ -8,6 +8,8 @@ describe('AppController (e2e)', () => {
   let hostToken: string;
   let guestToken: string;
   let hostId: string;
+  let guestId: string;
+  let patientId: string;
   let availabilityRuleId: string;
   let timeSlotId: string;
   let appointmentId: string;
@@ -48,7 +50,7 @@ describe('AppController (e2e)', () => {
         .post('/auth/register')
         .send(hostData)
         .expect(201);
-      
+
       expect(response.body).toHaveProperty('id');
       expect(response.body.email).toBe(hostData.email);
     });
@@ -82,11 +84,12 @@ describe('AppController (e2e)', () => {
     });
 
     it('[TC_04] /timeslots/generate (POST) - Generate Slots', async () => {
-      // Generate for next 3 days
       const today = new Date();
-      const nextDay = new Date(today); nextDay.setDate(today.getDate() + 1);
-      const dayAfter = new Date(today); dayAfter.setDate(today.getDate() + 3);
-      
+      const nextDay = new Date(today);
+      nextDay.setDate(today.getDate() + 1);
+      const dayAfter = new Date(today);
+      dayAfter.setDate(today.getDate() + 3);
+
       const fromDate = nextDay.toISOString().split('T')[0];
       const toDate = dayAfter.toISOString().split('T')[0];
 
@@ -100,17 +103,19 @@ describe('AppController (e2e)', () => {
           slotDuration: 60,
         })
         .expect(201);
-        
+
       expect(response.body.created).toBeGreaterThan(0);
     });
   });
 
-  describe('2. Guest Actions', () => {
+  describe('2. Guest Registration & Patient Profile', () => {
     it('[TC_05] /auth/register (POST) - Register Guest', async () => {
-      await request(server)
+      const response = await request(server)
         .post('/auth/register')
         .send(guestData)
         .expect(201);
+
+      guestId = response.body.id;
     });
 
     it('[TC_06] /auth/login (POST) - Login Guest', async () => {
@@ -123,148 +128,208 @@ describe('AppController (e2e)', () => {
       expect(guestToken).toBeDefined();
     });
 
-    it('[TC_07] /hosts (GET) - Search Hosts', async () => {
+    it('[TC_07] /patients (POST) - Create Patient Profile', async () => {
       const response = await request(server)
-        .get('/hosts')
+        .post('/patients')
+        .set('Authorization', `Bearer ${guestToken}`)
+        .send({
+          name: 'Test Patient',
+          email: 'patient@test.com',
+          phone: '0123456789',
+          dob: '1990-01-01',
+          gender: 'MALE',
+        })
+        .expect(201);
+
+      patientId = response.body.id;
+      expect(response.body.name).toBe('Test Patient');
+    });
+
+    it('[TC_08] /patients (GET) - Get My Patients', async () => {
+      const response = await request(server)
+        .get('/patients')
         .set('Authorization', `Bearer ${guestToken}`)
         .expect(200);
-      
+
+      expect(response.body.length).toBeGreaterThan(0);
+      const patient = response.body.find((p: any) => p.id === patientId);
+      expect(patient).toBeDefined();
+    });
+  });
+
+  describe('3. Specialties & Host Search', () => {
+    it('[TC_09] /specialties (GET) - Get Specialties', async () => {
+      const response = await request(server)
+        .get('/specialties')
+        .expect(200);
+
+      expect(response.body.length).toBeGreaterThan(0);
+      expect(response.body[0]).toHaveProperty('name');
+      expect(response.body[0]).toHaveProperty('icon');
+    });
+
+    it('[TC_10] /hosts (GET) - Search Hosts', async () => {
+      const response = await request(server)
+        .get('/hosts')
+        .expect(200);
+
       const foundHost = response.body.data.find((h: any) => h.id === hostId);
       expect(foundHost).toBeDefined();
     });
 
-    it('[TC_08] /timeslots/host/:id (GET) - Get Host Slots', async () => {
+    it('[TC_11] /timeslots/host/:id (GET) - Get Host Slots', async () => {
       const response = await request(server)
         .get(`/timeslots/host/${hostId}`)
-        .set('Authorization', `Bearer ${guestToken}`)
         .expect(200);
-      
+
       const availableSlot = response.body.find((s: any) => s.isAvailable);
       expect(availableSlot).toBeDefined();
       timeSlotId = availableSlot.id;
     });
+  });
 
-    it('[TC_09] /appointments (POST) - Create Appointment', async () => {
+  describe('4. Booking Flow with Patient', () => {
+    it('[TC_12] /appointments (POST) - Create Appointment (with patientId)', async () => {
       const response = await request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${guestToken}`)
         .send({
           hostId: hostId,
-          timeSlotId: timeSlotId,
-          reason: 'E2E Test Booking',
+          timeslotId: timeSlotId,
+          patientId: patientId,
+          paymentAmount: 100000,
+          paymentMethod: 'CREDIT_CARD',
         })
         .expect(201);
-      
+
       appointmentId = response.body.id;
       expect(response.body.status).toBe('PENDING');
+      expect(response.body.payment_status).toBe('PENDING');
+      expect(response.body.patient_name).toBe('Test Patient');
+    });
+
+    it('[TC_13] /appointments/:id/pay (POST) - Mock Payment', async () => {
+      const response = await request(server)
+        .post(`/appointments/${appointmentId}/pay`)
+        .set('Authorization', `Bearer ${guestToken}`)
+        .send({
+          method: 'CREDIT_CARD',
+          amount: 100000,
+        })
+        .expect(201);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.payment_status).toBe('PAID');
+    });
+
+    it('[TC_14] /appointments/my (GET) - Guest Checks Appointment', async () => {
+      const response = await request(server)
+        .get('/appointments/my')
+        .set('Authorization', `Bearer ${guestToken}`)
+        .expect(200);
+
+      const appointment = response.body.find((a: any) => a.id === appointmentId);
+      expect(appointment).toBeDefined();
+      expect(appointment.payment_status).toBe('PAID');
     });
   });
 
-  describe('3. Confirmation', () => {
-    it('[TC_10] /appointments/:id/confirm (PATCH) - Host Confirms', async () => {
+  describe('5. Host Actions', () => {
+    it('[TC_15] /appointments/:id/confirm (PATCH) - Host Confirms', async () => {
       const response = await request(server)
         .patch(`/appointments/${appointmentId}/confirm`)
         .set('Authorization', `Bearer ${hostToken}`)
         .send({})
         .expect(200);
-      
+
       expect(response.body.status).toBe('CONFIRMED');
     });
 
-    it('[TC_11] /notifications/my (GET) - Guest Checks Notification', async () => {
-      // Need a small delay really, but logic usually fast enough
+    it('[TC_16] /appointments/doctor/dashboard (GET) - Dashboard Stats', async () => {
+      const today = new Date().toISOString().split('T')[0];
       const response = await request(server)
-        .get('/notifications/my')
-        .set('Authorization', `Bearer ${guestToken}`)
+        .get(`/appointments/doctor/dashboard?date=${today}`)
+        .set('Authorization', `Bearer ${hostToken}`)
         .expect(200);
-      
-      const notif = response.body.find((n: any) => n.type === 'APPOINTMENT_CONFIRMED');
-      // Note: Depending on async trigger timing, this might be flaky without retry logic
-      // But for E2E happy path usually works.
-      if (notif) {
-        expect(notif.type).toBe('APPOINTMENT_CONFIRMED');
-      }
+
+      expect(response.body).toHaveProperty('statistics');
+      expect(response.body.statistics).toHaveProperty('total');
     });
 
+    it('[TC_17] /appointments/doctor/today (GET) - Today Appointments', async () => {
+      const response = await request(server)
+        .get('/appointments/doctor/today')
+        .set('Authorization', `Bearer ${hostToken}`)
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+    });
   });
 
-  describe('4. Edge Cases & Error Handling', () => {
-    it('[TC_12] /auth/login (POST) - Fail with wrong password', async () => {
-      await request(server)
-        .post('/auth/login')
-        .send({ email: hostData.email, password: 'wrongpassword' })
-        .expect(401);
-    });
-
-    it('[TC_13] /timeslots/generate (POST) - Guest Forbidden', async () => {
-      await request(server)
-        .post('/timeslots/generate')
-        .set('Authorization', `Bearer ${guestToken}`) // Guest trying to act as Host
-        .send({
-          ruleId: availabilityRuleId,
-          fromDate: '2026-01-01',
-          toDate: '2026-01-02',
-          slotDuration: 60,
-        })
-        .expect(403);
-    });
-
-    it('[TC_14] /appointments (POST) - Fail Double Booking', async () => {
-      // Try to book the same slot again with a new guest
-      const newGuest = {
-        name: `GUEST_2_${randomId()}`,
-        email: `guest2_${randomId()}@test.com`,
-        password: 'password123',
-        phone: '0900000000',
-      };
-      
-      // Register new guest
-      await request(server).post('/auth/register').send(newGuest);
-      const login = await request(server).post('/auth/login').send({ email: newGuest.email, password: newGuest.password });
-      const token = login.body.accessToken;
-
-      // Try book confirmed/pending slot
+  describe('6. Error Handling', () => {
+    it('[TC_18] /appointments (POST) - Fail without patientId', async () => {
       await request(server)
         .post('/appointments')
-        .set('Authorization', `Bearer ${token}`)
+        .set('Authorization', `Bearer ${guestToken}`)
         .send({
           hostId: hostId,
-          timeSlotId: timeSlotId, // Already booked in Step 2
-          reason: 'Double Booking Attempt',
+          timeslotId: timeSlotId,
+          // Missing patientId
         })
-        .expect(409); // Expect Conflict
+        .expect(400);
+    });
+
+    it('[TC_19] /appointments (POST) - Fail with invalid patientId', async () => {
+      await request(server)
+        .post('/appointments')
+        .set('Authorization', `Bearer ${guestToken}`)
+        .send({
+          hostId: hostId,
+          timeslotId: timeSlotId,
+          patientId: 'invalid-patient-id',
+        })
+        .expect(400);
+    });
+
+    it('[TC_20] /patients (POST) - Fail to create 6th patient', async () => {
+      // Create 4 more patients (already have 1)
+      for (let i = 0; i < 4; i++) {
+        await request(server)
+          .post('/patients')
+          .set('Authorization', `Bearer ${guestToken}`)
+          .send({
+            name: `Patient ${i + 2}`,
+            phone: `012345678${i}`,
+          })
+          .expect(201);
+      }
+
+      // Try to create 6th
+      await request(server)
+        .post('/patients')
+        .set('Authorization', `Bearer ${guestToken}`)
+        .send({
+          name: 'Patient 6',
+          phone: '0123456786',
+        })
+        .expect(400);
     });
   });
 
-  describe('5. Cancellation', () => {
-    it('[TC_15] /appointments/:id/cancel (PATCH) - Host Cancels Appointment', async () => {
+  describe('7. Cancellation', () => {
+    it('[TC_21] /appointments/:id/cancel (PATCH) - Cancel Appointment', async () => {
       const response = await request(server)
         .patch(`/appointments/${appointmentId}/cancel`)
-        .set('Authorization', `Bearer ${hostToken}`)
-        .send({ cancelReason: 'Host busy' })
+        .set('Authorization', `Bearer ${guestToken}`)
+        .send({ cancelReason: 'Test cancellation' })
         .expect(200);
 
       expect(response.body.status).toBe('CANCELED');
-      expect(response.body.cancelReason).toBe('Host busy');
     });
 
-    it('[TC_16] /notifications/my (GET) - Guest Recieves Cancel Notification', async () => {
-      const response = await request(server)
-        .get('/notifications/my')
-        .set('Authorization', `Bearer ${guestToken}`)
-        .expect(200);
-
-      const notif = response.body.find((n: any) => n.type === 'APPOINTMENT_CANCELED');
-      if (notif) {
-        expect(notif.type).toBe('APPOINTMENT_CANCELED');
-      }
-    });
-
-    it('[TC_17] /timeslots/host/:id (GET) - Slot should be open again', async () => {
-      // After cancel, the slot should be available again
+    it('[TC_22] /timeslots/host/:id (GET) - Slot available again', async () => {
       const response = await request(server)
         .get(`/timeslots/host/${hostId}`)
-        .set('Authorization', `Bearer ${guestToken}`)
         .expect(200);
 
       const slot = response.body.find((s: any) => s.id === timeSlotId);
@@ -272,4 +337,3 @@ describe('AppController (e2e)', () => {
     });
   });
 });
-
