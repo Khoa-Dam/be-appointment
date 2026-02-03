@@ -3,7 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
-  ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase';
@@ -19,226 +19,144 @@ export class AppointmentsService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly eventEmitter: EventEmitter2,
-  ) {}
+  ) { }
 
-  async create(guestId: string | null, dto: CreateAppointmentDto) {
-    // Validate timeslot_id is provided
-    if (!dto.timeSlotId) {
-      throw new BadRequestException(
-        'TimeSlot ID is required to book an appointment',
+  async create(guestId: string, dto: CreateAppointmentDto) {
+    const client = this.supabase.getClient();
+
+    // REQUIRED: guestId must be authenticated user
+    if (!guestId) {
+      throw new UnauthorizedException(
+        'You must be logged in to create an appointment',
       );
     }
 
-    // Use Admin Client to bypass RLS for booking logic (lock slot)
-    const client = this.supabase.getAdminClient();
-
-    // 1. ATOMIC: Lock timeslot (prevent race condition)
-    const { data: timeslot, error: slotError } = await client
-      .from('timeslots')
-      .update({
-        is_available: false,
-      })
-      .eq('id', dto.timeSlotId)
-      .eq('is_available', true)
-      .select('*, host:users!timeslots_host_id_fkey(id, name, email)')
+    // Validate patient belongs to user
+    const { data: patient, error: patientError } = await client
+      .from('patients')
+      .select('*')
+      .eq('id', dto.patientId)
+      .eq('owner_id', guestId)
       .single();
 
-    if (slotError || !timeslot) {
-      throw new ConflictException(
-        'Slot đã được đặt bởi người khác. Vui lòng chọn slot khác.',
+    if (patientError || !patient) {
+      throw new BadRequestException(
+        'Patient not found or does not belong to you',
       );
     }
 
-    // Prepare guest info
-    let guestName = dto.guestName;
-    let guestEmail = dto.guestEmail;
-    let guestPhone = dto.guestPhone;
+    // Validate timeslot exists and is available
+    const { data: timeslot, error: timeslotError } = await client
+      .from('timeslots')
+      .select('*')
+      .eq('id', dto.timeslotId)
+      .eq('host_id', dto.hostId)
+      .eq('is_available', true)
+      .single();
 
-    if (guestId) {
-      const { data: guest } = await client
-        .from('users')
-        .select('name, email, phone')
-        .eq('id', guestId)
-        .single();
-
-      if (guest) {
-        guestName = guest.name;
-        guestEmail = guest.email;
-        guestPhone = guest.phone;
-      }
+    if (timeslotError || !timeslot) {
+      throw new BadRequestException('Timeslot not available');
     }
 
-    // 2. Create appointment
-    const { data: appointment, error: apptError } = await client
+    // Validate guest != host (không tự đặt lịch cho mình)
+    if (guestId === dto.hostId) {
+      throw new BadRequestException(
+        'You cannot book an appointment with yourself',
+      );
+    }
+
+    // Create appointment (trigger sẽ tự động populate patient_name, doctor_name, phone)
+    const { data, error } = await client
       .from('appointments')
       .insert({
-        guest_id: guestId, // Nullable
         host_id: dto.hostId,
-        timeslot_id: dto.timeSlotId,
-        reason: dto.reason,
+        guest_id: guestId,
+        timeslot_id: dto.timeslotId,
+        patient_id: dto.patientId,
         status: 'PENDING',
-        // New fields for anonymous
-        guest_name: guestName,
-        guest_email: guestEmail,
-        guest_phone: guestPhone,
+        payment_status: 'PENDING',
+        payment_method: dto.paymentMethod,
+        payment_amount: dto.paymentAmount,
       })
-      .select('*, timeslots(*)')
+      .select()
       .single();
-
-    if (apptError) {
-      await client
-        .from('timeslots')
-        .update({ is_available: true })
-        .eq('id', dto.timeSlotId);
-      throw new BadRequestException(apptError.message);
-    }
-
-    // 3. Emit event (non-blocking email)
-    this.eventEmitter.emit('appointment.created', {
-      appointmentId: appointment.id,
-      hostId: dto.hostId,
-      hostName: timeslot.host?.name || 'Host',
-      hostEmail: timeslot.host?.email,
-      guestId: guestId || 'anonymous',
-      guestName: guestName || 'Guest',
-      guestEmail: guestEmail,
-      date: timeslot.date,
-      time: new Date(timeslot.start_time).toLocaleTimeString('vi-VN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      reason: dto.reason,
-    } as AppointmentCreatedEvent);
-
-    return {
-      id: appointment.id,
-      status: appointment.status,
-      hostId: appointment.host_id,
-      guestId: appointment.guest_id,
-      timeSlot: {
-        startTime: appointment.timeslots?.start_time,
-        endTime: appointment.timeslots?.end_time,
-      },
-      reason: appointment.reason,
-      createdAt: appointment.created_at,
-    };
-  }
-
-  async findMyAppointments(userId: string, role: string) {
-    const client = this.supabase.getAdminClient(); // Use admin client to bypass RLS on timeslots
-
-    let query = client
-      .from('appointments')
-      .select(
-        `
-                *,
-                timeslots (id, start_time, end_time, is_available),
-                host:users!appointments_host_id_fkey (id, name, email, specialty),
-                guest:users!appointments_guest_id_fkey (id, name, email)
-            `,
-      )
-      .order('created_at', { ascending: false });
-
-    // Return appointments where user is either Host OR Guest
-    query = query.or(`host_id.eq.${userId},guest_id.eq.${userId}`);
-
-    const { data, error } = await query;
 
     if (error) {
       throw new BadRequestException(error.message);
     }
 
-    return data.map((appt) => ({
-      id: appt.id,
-      status: appt.status,
-      reason: appt.reason,
-      timeSlotId: appt.timeslot_id,
-      timeSlot: appt.timeslot_id
-        ? {
-            id: appt.timeslots?.id,
-            startTime: appt.timeslots?.start_time,
-            endTime: appt.timeslots?.end_time,
-            isAvailable: appt.timeslots?.is_available,
-          }
-        : null,
-      host: appt.host,
-      guest: appt.guest || {
-        name: appt.guest_name,
-        email: appt.guest_email,
-        phone: appt.guest_phone,
-      },
-      createdAt: appt.created_at,
-      updatedAt: appt.updated_at,
-    }));
+    // Mark timeslot as unavailable
+    await client
+      .from('timeslots')
+      .update({ is_available: false })
+      .eq('id', dto.timeslotId);
+
+    // Emit event for email notification (optional)
+    // this.eventEmitter.emit('appointment.created', {...});
+
+    return data;
+  }
+
+  async findMyAppointments(userId: string) {
+    const client = this.supabase.getClient();
+
+    const { data, error } = await client
+      .from('appointments')
+      .select(
+        `
+        id,
+        doctor_name,
+        patient_name,
+        phone,
+        status,
+        payment_status,
+        payment_amount,
+        cancel_reason,
+        created_at,
+        timeslots:timeslot_id (start_time, end_time)
+      `,
+      )
+      .or(`guest_id.eq.${userId},host_id.eq.${userId}`)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    return data;
   }
 
   async confirm(appointmentId: string, hostId: string) {
-    // Use Admin Client to ensure reliability (ownership checked by query)
-    const client = this.supabase.getAdminClient();
+    const client = this.supabase.getClient();
 
-    console.log(`DEBUG: Confirming appt ${appointmentId} for host ${hostId}`);
-
-    // Get appointment with relations
     const { data, error } = await client
       .from('appointments')
-      .update({
-        status: 'CONFIRMED',
-      })
+      .update({ status: 'CONFIRMED' })
       .eq('id', appointmentId)
       .eq('host_id', hostId)
       .eq('status', 'PENDING')
-      .select(
-        `
-                *,
-                timeslots (*),
-                host:users!appointments_host_id_fkey (id, name, email),
-                guest:users!appointments_guest_id_fkey (id, name, email)
-            `,
-      )
+      .select()
       .single();
 
     if (error || !data) {
-      console.error('Confirm Error:', error);
       throw new BadRequestException(
         'Cannot confirm this appointment. It may not exist, not belong to you, or not in PENDING status.',
       );
     }
 
-    // Emit event for email
-    this.eventEmitter.emit('appointment.confirmed', {
-      appointmentId: data.id,
-      hostName: data.host?.name || 'Host',
-      guestName: data.guest?.name || data.guest_name || 'Guest',
-      guestEmail: data.guest?.email || data.guest_email,
-      date: data.timeslots?.date,
-      time: new Date(data.timeslots?.start_time).toLocaleTimeString('vi-VN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    } as AppointmentConfirmedEvent);
+    // Emit event for email notification (optional)
+    // this.eventEmitter.emit('appointment.confirmed', {...});
 
-    return {
-      id: data.id,
-      status: data.status,
-      message: 'Appointment confirmed successfully',
-    };
+    return data;
   }
 
   async cancel(appointmentId: string, userId: string, cancelReason?: string) {
     const client = this.supabase.getClient();
-    const adminClient = this.supabase.getAdminClient();
 
-    // 1. Get appointment with relations
+    // Verify ownership
     const { data: appointment, error: fetchError } = await client
       .from('appointments')
-      .select(
-        `
-                *,
-                timeslots (*),
-                host:users!appointments_host_id_fkey (id, name, email),
-                guest:users!appointments_guest_id_fkey (id, name, email)
-            `,
-      )
+      .select('*, timeslots:timeslot_id(id, start_time)')
       .eq('id', appointmentId)
       .single();
 
@@ -246,63 +164,153 @@ export class AppointmentsService {
       throw new NotFoundException('Appointment not found');
     }
 
-    if (appointment.guest_id !== userId && appointment.host_id !== userId) {
-      throw new ForbiddenException('You can only cancel your own appointments');
+    if (
+      appointment.guest_id !== userId &&
+      appointment.host_id !== userId
+    ) {
+      throw new ForbiddenException('You cannot cancel this appointment');
     }
 
     if (appointment.status === 'CANCELED') {
-      throw new BadRequestException('Appointment is already canceled');
-    }
-    if (appointment.status === 'COMPLETED') {
-      throw new BadRequestException('Cannot cancel a completed appointment');
+      throw new BadRequestException('Appointment already canceled');
     }
 
-    // 2. Update status
-    const { data: updatedAppointment, error: updateError } = await client
+    // Update status
+    const { data, error } = await client
       .from('appointments')
       .update({
         status: 'CANCELED',
         cancel_reason: cancelReason,
-        updated_at: new Date().toISOString(),
       })
       .eq('id', appointmentId)
       .select()
       .single();
 
-    if (updateError) {
-      throw new BadRequestException(updateError.message);
+    if (error) {
+      throw new BadRequestException(error.message);
     }
 
-    // 3. Unlock timeslot (use admin client to bypass RLS)
-    await adminClient
-      .from('timeslots')
-      .update({ is_available: true })
-      .eq('id', appointment.timeslot_id);
+    // Release timeslot
+    if (appointment.timeslots?.id) {
+      await client
+        .from('timeslots')
+        .update({ is_available: true })
+        .eq('id', appointment.timeslots.id);
+    }
 
-    // 4. Emit event for email
-    const canceledBy = userId === appointment.host_id ? 'host' : 'guest';
-    this.eventEmitter.emit('appointment.canceled', {
-      appointmentId: updatedAppointment.id,
-      hostId: appointment.host_id,
-      hostName: appointment.host?.name || 'Host',
-      hostEmail: appointment.host?.email,
-      guestId: appointment.guest_id,
-      guestName: appointment.guest?.name || appointment.guest_name || 'Guest',
-      guestEmail: appointment.guest?.email || appointment.guest_email,
-      date: appointment.timeslots?.date,
-      time: new Date(appointment.timeslots?.start_time).toLocaleTimeString(
-        'vi-VN',
-        { hour: '2-digit', minute: '2-digit' },
-      ),
-      cancelReason,
-      canceledBy,
-    } as AppointmentCanceledEvent);
+    return data;
+  }
+
+  async mockPayment(
+    appointmentId: string,
+    userId: string,
+    paymentDto: { method: string; amount: number },
+  ) {
+    const client = this.supabase.getClient();
+
+    // Verify appointment belongs to user
+    const { data: appointment, error: appError } = await client
+      .from('appointments')
+      .select('*')
+      .eq('id', appointmentId)
+      .eq('guest_id', userId)
+      .single();
+
+    if (appError || !appointment) {
+      throw new NotFoundException('Appointment not found');
+    }
+
+    if (appointment.payment_status === 'PAID') {
+      throw new BadRequestException('Appointment already paid');
+    }
+
+    // Mock payment success
+    const { data, error } = await client
+      .from('appointments')
+      .update({
+        payment_status: 'PAID',
+        payment_method: paymentDto.method,
+        payment_amount: paymentDto.amount,
+        paid_at: new Date().toISOString(),
+      })
+      .eq('id', appointmentId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new BadRequestException('Payment failed');
+    }
 
     return {
-      id: updatedAppointment.id,
-      status: updatedAppointment.status,
-      cancelReason: updatedAppointment.cancel_reason,
-      message: 'Appointment canceled successfully',
+      success: true,
+      message: 'Payment successful (mock)',
+      data,
     };
+  }
+
+  // Doctor Dashboard
+  async getDoctorDashboard(hostId: string, date?: string) {
+    const client = this.supabase.getClient();
+    const targetDate = date || new Date().toISOString().split('T')[0];
+
+    // Get all appointments for the date
+    const { data: appointments } = await client
+      .from('appointments')
+      .select(
+        `
+        *,
+        timeslots:timeslot_id (start_time, end_time)
+      `,
+      )
+      .eq('host_id', hostId)
+      .gte('timeslots.start_time', `${targetDate}T00:00:00`)
+      .lte('timeslots.start_time', `${targetDate}T23:59:59`);
+
+    const total = appointments?.length || 0;
+    const confirmed =
+      appointments?.filter((a) => a.status === 'CONFIRMED').length || 0;
+    const pending =
+      appointments?.filter((a) => a.status === 'PENDING').length || 0;
+    const canceled =
+      appointments?.filter((a) => a.status === 'CANCELED').length || 0;
+
+    return {
+      date: targetDate,
+      statistics: {
+        total,
+        confirmed,
+        pending,
+        canceled,
+      },
+    };
+  }
+
+  async getTodayAppointments(hostId: string) {
+    const client = this.supabase.getClient();
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data, error } = await client
+      .from('appointments')
+      .select(
+        `
+        id,
+        patient_name,
+        phone,
+        status,
+        payment_status,
+        created_at,
+        timeslots:timeslot_id (start_time, end_time)
+      `,
+      )
+      .eq('host_id', hostId)
+      .gte('timeslots.start_time', `${today}T00:00:00`)
+      .lte('timeslots.start_time', `${today}T23:59:59`)
+      .order('timeslots(start_time)', { ascending: true });
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    return data;
   }
 }

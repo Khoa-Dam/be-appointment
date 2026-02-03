@@ -1,5 +1,22 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import {
+    Controller,
+    Get,
+    Post,
+    Patch,
+    Param,
+    Query,
+    Body,
+    UseGuards,
+    ParseUUIDPipe,
+} from '@nestjs/common';
+import {
+    ApiTags,
+    ApiOperation,
+    ApiResponse,
+    ApiBearerAuth,
+    ApiParam,
+    ApiQuery,
+} from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
 import { SupabaseGuard } from '../supabase';
 import { CurrentUser, Roles } from '../common/decorators';
@@ -12,12 +29,12 @@ import { CreateAppointmentDto, CancelAppointmentDto } from './dto';
 export class AppointmentsController {
     constructor(private readonly appointmentsService: AppointmentsService) { }
 
+    // Create appointment (Auth required)
     @Post()
     @UseGuards(SupabaseGuard)
     @ApiBearerAuth('access-token')
-    @ApiOperation({ summary: 'Create a new appointment (Book a timeslot)' })
-    @ApiResponse({ status: 201, description: 'Appointment created successfully' })
-    @ApiResponse({ status: 409, description: 'Slot already booked by someone else' })
+    @ApiOperation({ summary: 'Create a new appointment (patient_id required)' })
+    @ApiResponse({ status: 201, description: 'Appointment created' })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
     async create(
         @CurrentUser() user: any,
@@ -26,40 +43,24 @@ export class AppointmentsController {
         return this.appointmentsService.create(user.sub, dto);
     }
 
-    @Post('public')
-    @ApiOperation({ summary: 'Create appointment for anonymous guest' })
-    @ApiResponse({ status: 201, description: 'Appointment created successfully' })
-    @ApiResponse({ status: 400, description: 'Missing guest info' })
-    async createPublic(
-        @Body() dto: CreateAppointmentDto,
-    ) {
-        if (!dto.guestName || !dto.guestEmail) {
-            throw new BadRequestException('Name and Email are required for anonymous booking');
-        }
-        return this.appointmentsService.create(null, dto);
-    }
-
+    // Get my appointments
     @Get('my')
     @UseGuards(SupabaseGuard)
     @ApiBearerAuth('access-token')
-    @ApiOperation({ summary: 'Get my appointments (as Guest or Host)' })
+    @ApiOperation({ summary: 'Get my appointments' })
     @ApiResponse({ status: 200, description: 'List of appointments' })
-    @ApiResponse({ status: 401, description: 'Unauthorized' })
     async getMyAppointments(@CurrentUser() user: any) {
-        const role = user.role || user.user_metadata?.role || 'GUEST';
-        return this.appointmentsService.findMyAppointments(user.sub, role);
+        return this.appointmentsService.findMyAppointments(user.sub);
     }
 
+    // Confirm appointment (Host only)
     @Patch(':id/confirm')
     @UseGuards(SupabaseGuard, RolesGuard)
     @Roles(UserRole.HOST)
     @ApiBearerAuth('access-token')
-    @ApiOperation({ summary: 'Confirm an appointment (Host only)' })
+    @ApiOperation({ summary: 'Confirm appointment (Host only)' })
     @ApiParam({ name: 'id', description: 'Appointment ID' })
     @ApiResponse({ status: 200, description: 'Appointment confirmed' })
-    @ApiResponse({ status: 400, description: 'Cannot confirm this appointment' })
-    @ApiResponse({ status: 401, description: 'Unauthorized' })
-    @ApiResponse({ status: 403, description: 'Forbidden - Host only' })
     async confirm(
         @Param('id', ParseUUIDPipe) id: string,
         @CurrentUser() user: any,
@@ -67,20 +68,69 @@ export class AppointmentsController {
         return this.appointmentsService.confirm(id, user.sub);
     }
 
+    // Cancel appointment
     @Patch(':id/cancel')
     @UseGuards(SupabaseGuard)
     @ApiBearerAuth('access-token')
-    @ApiOperation({ summary: 'Cancel an appointment (Guest or Host)' })
+    @ApiOperation({ summary: 'Cancel appointment' })
     @ApiParam({ name: 'id', description: 'Appointment ID' })
     @ApiResponse({ status: 200, description: 'Appointment canceled' })
-    @ApiResponse({ status: 400, description: 'Cannot cancel this appointment' })
-    @ApiResponse({ status: 403, description: 'Not your appointment' })
-    @ApiResponse({ status: 404, description: 'Appointment not found' })
     async cancel(
         @Param('id', ParseUUIDPipe) id: string,
         @CurrentUser() user: any,
         @Body() dto: CancelAppointmentDto,
     ) {
         return this.appointmentsService.cancel(id, user.sub, dto.cancelReason);
+    }
+
+    // Mock payment
+    @Post(':id/pay')
+    @UseGuards(SupabaseGuard)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({ summary: 'Mock payment for appointment' })
+    @ApiParam({ name: 'id', description: 'Appointment ID' })
+    @ApiResponse({ status: 200, description: 'Payment successful (mock)' })
+    async mockPayment(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: any,
+        @Body() paymentDto: { method: string; amount: number },
+    ) {
+        return this.appointmentsService.mockPayment(id, user.sub, paymentDto);
+    }
+
+    // Doctor Dashboard - Statistics
+    @Get('doctor/dashboard')
+    @UseGuards(SupabaseGuard, RolesGuard)
+    @Roles(UserRole.HOST)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({
+        summary: 'Get doctor dashboard statistics (HOST only)',
+    })
+    @ApiQuery({ name: 'date', required: false, type: String, example: '2024-01-01' })
+    @ApiResponse({
+        status: 200,
+        description: 'Dashboard statistics',
+    })
+    async getDoctorDashboard(
+        @CurrentUser() user: any,
+        @Query('date') date?: string,
+    ) {
+        return this.appointmentsService.getDoctorDashboard(user.sub, date);
+    }
+
+    // Doctor Dashboard - Today's appointments
+    @Get('doctor/today')
+    @UseGuards(SupabaseGuard, RolesGuard)
+    @Roles(UserRole.HOST)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({
+        summary: "Get today's appointments sorted by time (HOST only)",
+    })
+    @ApiResponse({
+        status: 200,
+        description: 'Today appointments',
+    })
+    async getTodayAppointments(@CurrentUser() user: any) {
+        return this.appointmentsService.getTodayAppointments(user.sub);
     }
 }

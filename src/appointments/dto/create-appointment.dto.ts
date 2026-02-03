@@ -1,36 +1,25 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsUUID, IsOptional, IsNumber } from 'class-validator';
 
 export class CreateAppointmentDto {
-    @ApiProperty({ example: 'uuid-of-host', description: 'Host ID to book with' })
+    @ApiProperty({ example: 'uuid-of-host', description: 'Host/Doctor ID' })
     @IsUUID()
-    @IsNotEmpty()
     hostId: string;
 
-    @ApiProperty({ example: 'uuid-of-timeslot', description: 'TimeSlot ID to book' })
+    @ApiProperty({ example: 'uuid-of-timeslot', description: 'Timeslot ID' })
     @IsUUID()
-    @IsNotEmpty()
-    timeSlotId: string;
+    timeslotId: string;
 
-    @ApiPropertyOptional({ example: 'Tư vấn sức khỏe', description: 'Reason for appointment' })
-    @IsOptional()
-    @IsString()
-    @MaxLength(500)
-    reason?: string;
+    @ApiProperty({ example: 'uuid-of-patient', description: 'Patient profile ID' })
+    @IsUUID()
+    patientId: string;
 
-    // Fields for anonymous guests
-    @ApiPropertyOptional({ example: 'Alice Guest', description: 'Name (for anonymous booking)' })
+    @ApiPropertyOptional({ example: 100000, description: 'Payment amount' })
     @IsOptional()
-    @IsString()
-    guestName?: string;
+    @IsNumber()
+    paymentAmount?: number;
 
-    @ApiPropertyOptional({ example: 'alice@example.com', description: 'Email (for anonymous booking)' })
+    @ApiPropertyOptional({ example: 'CREDIT_CARD', description: 'Payment method' })
     @IsOptional()
-    @IsString() // Can verify email format in service or pipe if needed
-    guestEmail?: string;
-
-    @ApiPropertyOptional({ example: '0987654321', description: 'Phone (for anonymous booking)' })
-    @IsOptional()
-    @IsString()
-    guestPhone?: string;
+    paymentMethod?: string;
 }
