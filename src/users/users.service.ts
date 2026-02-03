@@ -8,7 +8,7 @@ import { UserRole } from '../common/enums';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly supabase: SupabaseService) { }
+  constructor(private readonly supabase: SupabaseService) {}
 
   // GET /users - Admin: list all users with pagination
   async findAll(page = 1, limit = 20, role?: UserRole) {
@@ -208,6 +208,12 @@ export class UsersService {
     if (updateData.name !== undefined) updateObj.name = updateData.name;
     if (updateData.email !== undefined) updateObj.email = updateData.email;
     if (updateData.phone !== undefined) updateObj.phone = updateData.phone;
+    if (updateData.title !== undefined) updateObj.title = updateData.title;
+    if (updateData.specialtyId !== undefined)
+      updateObj.specialty_id = updateData.specialtyId;
+    if (updateData.price !== undefined) updateObj.price = updateData.price;
+    if (updateData.avatar !== undefined) updateObj.avatar = updateData.avatar;
+
     if (updateData.address !== undefined)
       updateObj.address = updateData.address;
     if (updateData.specialty !== undefined)
