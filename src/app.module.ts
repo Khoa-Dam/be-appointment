@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SupabaseModule } from './supabase';
@@ -12,6 +13,8 @@ import { AppointmentsModule } from './appointments/appointments.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { EventsModule } from './events';
 import { configuration } from './config';
+import { SpecialtiesModule } from './specialties/specialties.module';
+import { PatientsModule } from './patients/patients.module';
 
 @Module({
   imports: [
@@ -20,8 +23,9 @@ import { configuration } from './config';
       envFilePath: '.env',
       load: [configuration],
     }),
+    EventEmitterModule.forRoot(),
     SupabaseModule,
-    EventsModule,  // Event-driven architecture for emails
+    EventsModule,
     AuthModule,
     UsersModule,
     ReportsModule,
@@ -29,6 +33,8 @@ import { configuration } from './config';
     TimeslotsModule,
     AppointmentsModule,
     NotificationsModule,
+    SpecialtiesModule,
+    PatientsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
