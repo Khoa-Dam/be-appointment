@@ -28,7 +28,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 @ApiTags('users')
 @Controller()
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   // ========== ADMIN ROUTES ==========
 
@@ -76,14 +76,14 @@ export class UsersController {
   @ApiOperation({ summary: 'List all active hosts' })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-  @ApiQuery({ name: 'specialty', required: false, type: String })
+  @ApiQuery({ name: 'specialtyId', required: false, type: String })
   @ApiResponse({ status: 200, description: 'List of hosts with pagination' })
   async findHosts(
     @Query('page') page?: number,
     @Query('limit') limit?: number,
-    @Query('specialty') specialty?: string,
+    @Query('specialtyId') specialtyId?: string,
   ) {
-    return this.usersService.findHosts(page || 1, limit || 20, specialty);
+    return this.usersService.findHosts(page || 1, limit || 20, specialtyId);
   }
 
   @Get('hosts/:id')

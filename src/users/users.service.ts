@@ -8,7 +8,7 @@ import { UserRole } from '../common/enums';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly supabase: SupabaseService) { }
 
   // GET /users - Admin: list all users with pagination
   async findAll(page = 1, limit = 20, role?: UserRole) {
@@ -61,14 +61,32 @@ export class UsersService {
   }
 
   // GET /hosts - Guest: list all hosts
-  async findHosts(page = 1, limit = 20, specialty?: string) {
+  async findHosts(page = 1, limit = 20, specialtyId?: string) {
     const client = this.supabase.getClient();
     const offset = (page - 1) * limit;
 
     let query = client
       .from('users')
       .select(
-        'id, name, email, specialty, description, address, is_active, created_at',
+        `
+        id, 
+        name, 
+        email, 
+        title,
+        specialty, 
+        specialty_id,
+        description, 
+        address, 
+        price,
+        avatar,
+        is_active, 
+        created_at,
+        specialties:specialty_id (
+          id,
+          name,
+          icon
+        )
+      `,
         { count: 'exact' },
       )
       .eq('role', UserRole.HOST)
@@ -76,8 +94,8 @@ export class UsersService {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (specialty) {
-      query = query.ilike('specialty', `%${specialty}%`);
+    if (specialtyId) {
+      query = query.eq('specialty_id', specialtyId);
     }
 
     const { data, error, count } = await query;
