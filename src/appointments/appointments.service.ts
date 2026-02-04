@@ -19,7 +19,7 @@ export class AppointmentsService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly eventEmitter: EventEmitter2,
-  ) {}
+  ) { }
 
   async create(guestId: string, dto: CreateAppointmentDto) {
     const client = this.supabase.getClient();
@@ -136,7 +136,7 @@ export class AppointmentsService {
       .select(
         `
         id,
-        doctor:host_id (name,title, address, specialty ),
+        doctor_name,
         patient_name,
         phone,
         status,
