@@ -10,7 +10,7 @@ import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly supabase: SupabaseService) { }
 
   async register(dto: RegisterDto) {
     // Use admin client for registration (auto-confirm email, proper rollback)
@@ -71,13 +71,30 @@ export class AuthService {
   async login(dto: LoginDto) {
     const client = this.supabase.getClient();
 
+    // Check if user exists first (better UX)
+    const { data: userExists } = await client
+      .from('users')
+      .select('id')
+      .eq('email', dto.email)
+      .single();
+
+    if (!userExists) {
+      throw new UnauthorizedException('Email not registered. Please sign up first.');
+    }
+
+    // Attempt login
     const { data, error } = await client.auth.signInWithPassword({
       email: dto.email,
       password: dto.password,
     });
 
     if (error) {
-      throw new UnauthorizedException('Invalid credentials');
+      // At this point, user exists but password is wrong
+      if (error.message.includes('Invalid login credentials')) {
+        throw new UnauthorizedException('Invalid password');
+      }
+
+      throw new UnauthorizedException(error.message || 'Login failed');
     }
 
     if (!data.user || !data.session) {
