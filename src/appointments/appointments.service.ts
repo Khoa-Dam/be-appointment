@@ -19,7 +19,7 @@ export class AppointmentsService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly eventEmitter: EventEmitter2,
-  ) { }
+  ) {}
 
   async create(guestId: string, dto: CreateAppointmentDto) {
     const client = this.supabase.getClient();
@@ -136,7 +136,7 @@ export class AppointmentsService {
       .select(
         `
         id,
-        doctor_name,
+        doctor:host_id (name,title, address, specialty ),
         patient_name,
         phone,
         status,
@@ -230,10 +230,7 @@ export class AppointmentsService {
       throw new NotFoundException('Appointment not found');
     }
 
-    if (
-      appointment.guest_id !== userId &&
-      appointment.host_id !== userId
-    ) {
+    if (appointment.guest_id !== userId && appointment.host_id !== userId) {
       throw new ForbiddenException('You cannot cancel this appointment');
     }
 
