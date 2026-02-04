@@ -10,6 +10,9 @@ export class AppointmentCreatedEvent {
     date: string;
     time: string;
     reason?: string;
+    constructor(init?: Partial<AppointmentCreatedEvent>) {
+        Object.assign(this, init);
+    }
 }
 
 export class AppointmentConfirmedEvent {
@@ -19,6 +22,10 @@ export class AppointmentConfirmedEvent {
     guestEmail: string;
     date: string;
     time: string;
+
+    constructor(init?: Partial<AppointmentConfirmedEvent>) {
+        Object.assign(this, init);
+    }
 }
 
 export class AppointmentCanceledEvent {
@@ -33,4 +40,8 @@ export class AppointmentCanceledEvent {
     time: string;
     cancelReason?: string;
     canceledBy: 'host' | 'guest';
+
+    constructor(init?: Partial<AppointmentCanceledEvent>) {
+        Object.assign(this, init);
+    }
 }

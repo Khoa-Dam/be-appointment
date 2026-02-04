@@ -133,4 +133,26 @@ export class AppointmentsController {
     async getTodayAppointments(@CurrentUser() user: any) {
         return this.appointmentsService.getTodayAppointments(user.sub);
     }
+
+    // Get appointments by date range (for calendar)
+    @Get('doctor/range')
+    @UseGuards(SupabaseGuard, RolesGuard)
+    @Roles(UserRole.HOST)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({
+        summary: 'Get appointments by date range for calendar view (HOST only)',
+    })
+    @ApiQuery({ name: 'startDate', required: true, type: String, example: '2024-01-01' })
+    @ApiQuery({ name: 'endDate', required: true, type: String, example: '2024-01-31' })
+    @ApiResponse({
+        status: 200,
+        description: 'Appointments in date range',
+    })
+    async getAppointmentsByRange(
+        @CurrentUser() user: any,
+        @Query('startDate') startDate: string,
+        @Query('endDate') endDate: string,
+    ) {
+        return this.appointmentsService.getAppointmentsByRange(user.sub, startDate, endDate);
+    }
 }

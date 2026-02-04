@@ -31,6 +31,8 @@ export class AppointmentsService {
       );
     }
 
+    console.log('Creating appointment for guest:', guestId, 'DTO:', dto);
+
     // Validate patient belongs to user
     const { data: patient, error: patientError } = await client
       .from('patients')
@@ -40,6 +42,7 @@ export class AppointmentsService {
       .single();
 
     if (patientError || !patient) {
+      console.error('Patient validation failed:', patientError, 'Patient:', patient);
       throw new BadRequestException(
         'Patient not found or does not belong to you',
       );
@@ -55,6 +58,7 @@ export class AppointmentsService {
       .single();
 
     if (timeslotError || !timeslot) {
+      console.error('Timeslot validation failed:', timeslotError, 'Timeslot:', timeslot);
       throw new BadRequestException('Timeslot not available');
     }
 
@@ -78,7 +82,12 @@ export class AppointmentsService {
         payment_method: dto.paymentMethod,
         payment_amount: dto.paymentAmount,
       })
-      .select()
+      .select(`
+        *,
+        guest:users!guest_id(email, name),
+        host:users!host_id(email, name),
+        timeslot:timeslots!timeslot_id(date, start_time)
+      `)
       .single();
 
     if (error) {
@@ -91,14 +100,36 @@ export class AppointmentsService {
       .update({ is_available: false })
       .eq('id', dto.timeslotId);
 
-    // Emit event for email notification (optional)
-    // this.eventEmitter.emit('appointment.created', {...});
+    // Emit event for email notification
+    try {
+      const timeslot = data.timeslot as any; // Type casting due to join
+      const host = data.host as any;
+      const guest = data.guest as any;
+
+      if (host && guest && timeslot) {
+        this.eventEmitter.emit('appointment.created', new AppointmentCreatedEvent({
+          appointmentId: data.id,
+          hostId: dto.hostId,
+          hostEmail: host.email,
+          hostName: host.name,
+          guestId: guestId,
+          guestEmail: guest.email,
+          guestName: guest.name,
+          date: timeslot.date,
+          time: new Date(timeslot.start_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to emit appointment.created event', e);
+    }
 
     return data;
   }
 
   async findMyAppointments(userId: string) {
     const client = this.supabase.getClient();
+
+    console.log('Finding appointments for user:', userId);
 
     const { data, error } = await client
       .from('appointments')
@@ -113,17 +144,52 @@ export class AppointmentsService {
         payment_amount,
         cancel_reason,
         created_at,
-        timeslots:timeslot_id (start_time, end_time)
+        timeslots:timeslot_id (start_time, end_time),
+        hosts:users!host_id (
+          id,
+          name,
+          email,
+          phone,
+          specialty,
+          description,
+          address,
+          title
+        )
       `,
       )
       .or(`guest_id.eq.${userId},host_id.eq.${userId}`)
       .order('created_at', { ascending: false });
 
+    console.log('Data count:', data?.length);
     if (error) {
+      console.error('Error fetching appointments:', error);
       throw new BadRequestException(error.message);
     }
 
-    return data;
+    // Map hosts to doctor for frontend compatibility
+    const mappedData = data?.map((appointment) => {
+      const host = Array.isArray(appointment.hosts)
+        ? appointment.hosts[0]
+        : appointment.hosts;
+
+      return {
+        ...appointment,
+        doctor: host
+          ? {
+            id: host.id,
+            name: host.name,
+            email: host.email,
+            phone: host.phone,
+            specialty: host.specialty,
+            description: host.description,
+            address: host.address,
+            title: host.title,
+          }
+          : undefined,
+      };
+    });
+
+    return mappedData;
   }
 
   async confirm(appointmentId: string, hostId: string) {
@@ -176,14 +242,19 @@ export class AppointmentsService {
     }
 
     // Update status
-    const { data, error } = await client
+    const { data: updatedData, error } = await client
       .from('appointments')
       .update({
         status: 'CANCELED',
         cancel_reason: cancelReason,
       })
       .eq('id', appointmentId)
-      .select()
+      .select(`
+        *,
+        guest:users!guest_id(email, name),
+        host:users!host_id(email, name),
+        timeslot:timeslots!timeslot_id(date, start_time)
+      `)
       .single();
 
     if (error) {
@@ -191,14 +262,40 @@ export class AppointmentsService {
     }
 
     // Release timeslot
-    if (appointment.timeslots?.id) {
+    if (appointment.timeslot_id) { // Use timeslot_id from initial fetch (included in *)
       await client
         .from('timeslots')
         .update({ is_available: true })
-        .eq('id', appointment.timeslots.id);
+        .eq('id', appointment.timeslot_id);
     }
 
-    return data;
+    // Emit event
+    try {
+      const timeslot = updatedData.timeslot as any;
+      const host = updatedData.host as any;
+      const guest = updatedData.guest as any;
+      const canceledBy = userId === appointment.host_id ? 'host' : 'guest';
+
+      if (host && guest && timeslot) {
+        this.eventEmitter.emit('appointment.canceled', new AppointmentCanceledEvent({
+          appointmentId: updatedData.id,
+          hostId: updatedData.host_id,
+          hostName: host.name,
+          hostEmail: host.email,
+          guestId: updatedData.guest_id,
+          guestName: guest.name,
+          guestEmail: guest.email,
+          date: timeslot.date,
+          time: new Date(timeslot.start_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          cancelReason: cancelReason,
+          canceledBy: canceledBy
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to emit appointment.canceled event', e);
+    }
+
+    return updatedData;
   }
 
   async mockPayment(
@@ -305,6 +402,35 @@ export class AppointmentsService {
       .eq('host_id', hostId)
       .gte('timeslots.start_time', `${today}T00:00:00`)
       .lte('timeslots.start_time', `${today}T23:59:59`)
+      .order('timeslots(start_time)', { ascending: true });
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    return data;
+  }
+
+  // Get appointments by date range (for calendar view)
+  async getAppointmentsByRange(hostId: string, startDate: string, endDate: string) {
+    const client = this.supabase.getClient();
+
+    const { data, error } = await client
+      .from('appointments')
+      .select(
+        `
+        id,
+        patient_name,
+        phone,
+        status,
+        payment_status,
+        created_at,
+        timeslots:timeslot_id (id, start_time, end_time)
+      `,
+      )
+      .eq('host_id', hostId)
+      .gte('timeslots.start_time', `${startDate}T00:00:00`)
+      .lte('timeslots.start_time', `${endDate}T23:59:59`)
       .order('timeslots(start_time)', { ascending: true });
 
     if (error) {
